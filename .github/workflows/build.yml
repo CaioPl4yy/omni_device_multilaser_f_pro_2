@@ -10,8 +10,8 @@ on:
         description: "TWRP minimal manifest branch"
         default: "twrp-11"
       lunch_prefix:
-        description: "Product prefix used by the device tree (omni or twrp)"
-        default: "omni"
+        description: "Product prefix used by the device tree (twrp for twrp-11)"
+        default: "twrp"
       build_variant:
         description: "Build variant"
         default: "eng"
@@ -85,17 +85,23 @@ jobs:
           test -f "$DEST/BoardConfig.mk" || { echo "BoardConfig.mk not found at the repo root"; exit 1; }
 
       - name: Build boot image (recovery-as-boot)
+        shell: bash
         run: |
           cd "$HOME/twrp"
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-          set +e
+          # Log everything without putting lunch in a pipe (a pipe would run it in a subshell)
+          exec > >(tee -a "$HOME/build.log") 2>&1
+
           source build/envsetup.sh
-          lunch "${{ inputs.lunch_prefix }}_${DEVICE}-${{ inputs.build_variant }}" 2>&1 | tee "$HOME/build.log"
-          mka -j"$(nproc --all)" bootimage 2>&1 | tee -a "$HOME/build.log"
-          STATUS=${PIPESTATUS[0]}
+          PRODUCT="${{ inputs.lunch_prefix }}_${DEVICE}"
+          lunch "${PRODUCT}-${{ inputs.build_variant }}" || { echo "lunch failed"; exit 1; }
+          [ "$TARGET_PRODUCT" = "$PRODUCT" ] || { echo "TARGET_PRODUCT is '$TARGET_PRODUCT', expected '$PRODUCT'"; exit 1; }
+
+          mka -j"$(nproc --all)" bootimage
+          STATUS=$?
+          sleep 2
           exit $STATUS
-        shell: bash
 
       - name: Check output
         run: |
